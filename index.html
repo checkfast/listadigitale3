@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+
+  <link rel="manifest" href="manifest.json">
+
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Lista Digitale">
+
+  <link rel="apple-touch-icon" href="icon.png">
+
+  <meta name="theme-color" content="#1f2937">
+
+  <title>CheckFast – Lista Digitale</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+  <meta name="format-detection" content="telephone=no">
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#2b384b;color:#fff;margin:0;padding:15px}
+    h1{text-align:center;font-size:22px;margin-bottom:20px}
+    .card{background:#1f2937;border-radius:10px;padding:15px;margin-bottom:15px}
+    #searchBox{padding:12px;border-radius:8px;border:none;width:70%;margin:6px auto;display:block;font-size:18px}
+    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:18px}
+    th,td{padding:14px;border-bottom:1px solid #444}
+    th{background:#374151;text-align:left}
+    tr{cursor:pointer}
+    tr:hover{background:#4b5563}
+    tr.confirmed{background:#4CAF50!important;color:#fff}
+    tr.selected{background:#2563eb!important;color:#fff}
+    button{padding:12px 14px;border:none;border-radius:8px;cursor:pointer;margin:6px;font-size:16px}
+    button.ok{background:#16a34a;color:#fff}
+    .counter{margin-top:10px;font-size:20px;text-align:center}
+    .hidden{display:none}
+    .popupConfirm{position:fixed;top:15%;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:30px 40px;border-radius:12px;font-size:26px;font-weight:bold;display:none;z-index:99999;text-align:center;box-shadow:0 6px 20px rgba(0,0,0,0.6)}
+    .actionsBottom{text-align:center;margin-top:20px}
+    .actionsBottom button{min-width:140px;margin:6px;font-size:15px;padding:6px 8px;border-radius:6px;color:#fff}
+    #showListBtn{background:#2563eb}
+    #reportBtn{background:#d97706}
+    #registerNewBtn{background:#16a34a}
+    .logoBox{width:100%;text-align:center;margin-bottom:15px}
+    .logoImg{max-width:150px;height:auto}
+  </style>
+</head>
+
+<body>
+
+<div class="logoBox">
+  <img src="https://static.wixstatic.com/media/2080b2_091288fac9ef49fb875e82a42f827415~mv2.png" class="logoImg">
+</div>
+
+<h1>BATTITI - CASA BATTITI</h1>
+
+<div class="card hidden" id="toolsCard">
+  <input type="text" id="searchBox" placeholder="Cerca ospite…" autofocus>
+
+  <div class="counter">
+    <span id="countChecked">0</span> / <span id="countTotal">0</span>
+  </div>
+
+  <div class="actionsBottom">
+    <button id="showListBtn">Mostra/Nascondi</button>
+    <button id="reportBtn">Report</button>
+    <button id="registerNewBtn">Registra nuovo ospite</button>
+  </div>
+</div>
+
+<div class="card hidden" id="tableCard">
+  <table>
+    <thead>
+      <tr>
+        <th>OSPITI</th>
+        <th>AZIENDA</th>
+        <th>NOTE</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+</div>
+
+<div class="card hidden" id="confirmCard">
+  <button id="confirmBtn" class="ok" style="width:100%;">CONFERMA</button>
+</div>
+
+<div class="popupConfirm" id="popupConfirm">Ospite Accreditato</div>
+
+<script>
+const sheetURL = "https://script.google.com/macros/s/AKfycbx20TG3epvW5oIde5Pjfuh4z4Nq5s1IFYt1NdcNl4VyWjj0NeIM_1MSeLuypJUUH5RG/exec";
+
+let rawRows = [];
+let selectedRow = null;
+let selectedData = null;
+let selectedKey = null;
+let listVisible = false;
+
+const searchBox = document.getElementById("searchBox");
+const tbody = document.getElementById("tbody");
+const toolsCard = document.getElementById("toolsCard");
+const tableCard = document.getElementById("tableCard");
+const confirmCard = document.getElementById("confirmCard");
+const confirmBtn = document.getElementById("confirmBtn");
+const countChecked = document.getElementById("countChecked");
+const countTotal = document.getElementById("countTotal");
+const popupConfirm = document.getElementById("popupConfirm");
+const showListBtn = document.getElementById("showListBtn");
+const reportBtn = document.getElementById("reportBtn");
+const registerNewBtn = document.getElementById("registerNewBtn");
+
+async function caricaLista() {
+  try {
+    const res = await fetch(sheetURL + "?action=list&nocache=" + Date.now());
+    const data = await res.json();
+
+    rawRows = Array.isArray(data) ? data : [];
+
+    renderTable();
+    toolsCard.classList.remove("hidden");
+
+  } catch (err) {
+    alert("Errore caricamento lista: " + err.message);
+  }
+}
+
+function aggiornaContatori() {
+  countTotal.textContent = rawRows.length;
+
+  countChecked.textContent = rawRows.filter(r => {
+    return String(r.ingresso || "").trim() !== "";
+  }).length;
+}
+
+function renderTable() {
+  tbody.innerHTML = "";
+
+  const q = searchBox.value.trim().toLowerCase();
+  let rows = rawRows;
+
+  if (!listVisible && q === "") {
+    tableCard.classList.add("hidden");
+    confirmCard.classList.add("hidden");
+    aggiornaContatori();
+    return;
+  }
+
+  if (q !== "") {
+    rows = rawRows.filter(r =>
+      String(r.nominativo || "").toLowerCase().includes(q) ||
+      String(r.azienda || "").toLowerCase().includes(q) ||
+      String(r.note || "").toLowerCase().includes(q)
+    );
+  }
+
+  tableCard.classList.toggle("hidden", rows.length === 0);
+
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+
+    tr.innerHTML = `
+      <td>${r.nominativo || ""}</td>
+      <td>${r.azienda || ""}</td>
+      <td>${r.note || ""}</td>
+    `;
+
+    const confermato = String(r.ingresso || "").trim() !== "";
+    const key = `${r.nominativo}|${r.azienda}|${r.note}`;
+
+    if (confermato) {
+      tr.classList.add("confirmed");
+      tr.style.pointerEvents = "none";
+    }
+
+    tr.addEventListener("click", () => {
+      if (confermato) return;
+
+      [...tbody.children].forEach(row => row.classList.remove("selected"));
+
+      tr.classList.add("selected");
+      selectedRow = tr;
+      selectedData = r;
+      selectedKey = key;
+      confirmCard.classList.remove("hidden");
+    });
+
+    if (!confermato && selectedKey === key) {
+      tr.classList.add("selected");
+      selectedRow = tr;
+      selectedData = r;
+      confirmCard.classList.remove("hidden");
+    }
+
+    tbody.appendChild(tr);
+  });
+
+  aggiornaContatori();
+}
+
+async function confermaOspite(dati) {
+  const qs = new URLSearchParams({
+    action: "ingresso",
+    nominativo: dati.nominativo || "",
+    azienda: dati.azienda || "",
+    note: dati.note || ""
+  });
+
+  const res = await fetch(sheetURL + "?" + qs.toString() + "&nocache=" + Date.now());
+  const out = await res.json();
+
+  if (!out.ok) {
+    alert("Errore conferma: " + out.error);
+    return;
+  }
+
+  popupConfirm.textContent = "Ospite accreditato";
+  popupConfirm.style.display = "block";
+
+  selectedRow = null;
+  selectedData = null;
+  selectedKey = null;
+  confirmCard.classList.add("hidden");
+  searchBox.value = "";
+  listVisible = false;
+
+  await caricaLista();
+
+  setTimeout(() => {
+    popupConfirm.style.display = "none";
+  }, 1000);
+}
+
+confirmBtn.addEventListener("click", async () => {
+  if (!selectedData) return;
+  await confermaOspite(selectedData);
+});
+
+searchBox.addEventListener("input", renderTable);
+
+showListBtn.addEventListener("click", () => {
+  listVisible = !listVisible;
+  if (listVisible) searchBox.value = "";
+  renderTable();
+});
+
+reportBtn.addEventListener("click", () => {
+  const ws = XLSX.utils.json_to_sheet(rawRows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Report");
+  XLSX.writeFile(wb, "report_completo.xlsx");
+});
+
+async function aggiungiNuovoOspiteDaSearch() {
+  const nominativo = searchBox.value.trim();
+
+  if (!nominativo) {
+    alert("Scrivi prima nome e cognome dell'ospite nel campo di ricerca");
+    return;
+  }
+
+  const qs = new URLSearchParams({
+    action: "aggiungi",
+    nominativo: nominativo,
+    azienda: "",
+    note: ""
+  });
+
+  const res = await fetch(sheetURL + "?" + qs.toString() + "&nocache=" + Date.now());
+  const out = await res.json();
+
+  if (!out.ok) {
+    alert("Errore registrazione: " + out.error);
+    return;
+  }
+
+  popupConfirm.textContent = "Nuovo ospite registrato";
+  popupConfirm.style.display = "block";
+
+  searchBox.value = "";
+  listVisible = false;
+
+  await caricaLista();
+
+  setTimeout(() => {
+    popupConfirm.style.display = "none";
+  }, 1000);
+}
+
+registerNewBtn.addEventListener("click", async () => {
+  registerNewBtn.disabled = true;
+  registerNewBtn.textContent = "Registrazione in corso...";
+
+  await aggiungiNuovoOspiteDaSearch();
+
+  registerNewBtn.disabled = false;
+  registerNewBtn.textContent = "Registra nuovo ospite";
+});
+
+caricaLista();
+
+setInterval(() => {
+  if (!selectedData) caricaLista();
+}, 3000);
+</script>
+
+</body>
+</html>
