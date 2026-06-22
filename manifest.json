@@ -1,8 +1,8 @@
 {
   "name": "CheckFast – Lista Digitale",
-  "short_name": "Lista Digitale",
-  "start_url": "/listadigitale/",
-  "scope": "/listadigitale/",
+  "short_name": "Lista Digitale 3",
+  "start_url": "/listadigitale3/",
+  "scope": "/listadigitale3/",
   "display": "fullscreen",
   "background_color": "#1f2937",
   "theme_color": "#1f2937",
